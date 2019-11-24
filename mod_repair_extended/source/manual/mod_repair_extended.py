@@ -1,15 +1,17 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 
 import BattleReplay
 import BigWorld
 import Keys
 import SoundGroups
-from Avatar import PlayerAvatar as PlayerAvatar
 from gui import InputHandler
-from gui.Scaleform.daapi.view.battle.shared.consumables_panel import ConsumablesPanel
 from gui.battle_control.battle_constants import DEVICE_STATE_DESTROYED, VEHICLE_VIEW_STATE, DEVICE_STATE_NORMAL
 from gui.mods.mod_mods_gui import g_gui, inject
 from gui.shared.gui_items import Vehicle
+
+from gui.Scaleform.genConsts.BATTLE_VIEW_ALIASES import BATTLE_VIEW_ALIASES
+from gui.shared import g_eventBus, events, EVENT_BUS_SCOPE
+
 COMPLEX_ITEM = {
     'leftTrack' : 'chassis',
     'rightTrack': 'chassis',
@@ -34,9 +36,9 @@ CHASSIS = ['chassis', 'leftTrack', 'rightTrack', 'wheel', 'wheel0', 'wheel1', 'w
 class Config(object):
     def __init__(self):
         self.ids = 'repair_extended'
-        self.version = 'v3.08 (2019-06-10)'
+        self.version = 'v3.11 (2019-10-11)'
         self.author = 'by spoter'
-        self.version_id = 308
+        self.version_id = 311
         self.buttons = {
             'buttonRepair' : [Keys.KEY_SPACE],
             'buttonChassis': [[Keys.KEY_LALT, Keys.KEY_RALT]]
@@ -176,6 +178,8 @@ class Repair(object):
             'medkit'      : [763, 1019, None, None],
             'repairkit'   : [1275, 1531, None, None]
         }
+        g_eventBus.addListener(events.ComponentEvent.COMPONENT_REGISTERED, self.__onComponentRegistered, EVENT_BUS_SCOPE.GLOBAL)
+        g_eventBus.addListener(events.ComponentEvent.COMPONENT_UNREGISTERED, self.__onComponentUnregistered, EVENT_BUS_SCOPE.GLOBAL)
 
     def startBattle(self):
         self.ctrl = BigWorld.player().guiSessionProvider.shared
@@ -189,11 +193,16 @@ class Repair(object):
         for equipmentTag in self.items:
             self.items[equipmentTag][2] = None
             self.items[equipmentTag][3] = None
+        self.items['repairkit'][1] = 1531
 
     def checkBattleStarted(self):
         if hasattr(BigWorld.player(), 'arena') and BigWorld.player().arena.period is 3:
             for equipmentTag in self.items:
                 self.items[equipmentTag][2] = self.ctrl.equipments.getEquipment(self.items[equipmentTag][0]) if self.ctrl.equipments.hasEquipment(self.items[equipmentTag][0]) else None
+                self.items[equipmentTag][3] = self.ctrl.equipments.getEquipment(self.items[equipmentTag][1]) if self.ctrl.equipments.hasEquipment(self.items[equipmentTag][1]) else None
+            equipmentTag = 'repairkit'
+            if self.ctrl.equipments.hasEquipment(46331):
+                self.items[equipmentTag][1] = 46331
                 self.items[equipmentTag][3] = self.ctrl.equipments.getEquipment(self.items[equipmentTag][1]) if self.ctrl.equipments.hasEquipment(self.items[equipmentTag][1]) else None
         else:
             BigWorld.callback(0.1, self.checkBattleStarted)
@@ -307,27 +316,15 @@ class Repair(object):
             if g_gui.get_key(config.data['buttonRepair']) and event.isKeyDown():
                 self.repairAll()
 
+    def __onComponentRegistered(self, event):
+        if event.alias == BATTLE_VIEW_ALIASES.CONSUMABLES_PANEL:
+            self.consumablesPanel = event.componentPy
+            self.startBattle()
+
+    def __onComponentUnregistered(self, event):
+        if event.alias == BATTLE_VIEW_ALIASES.CONSUMABLES_PANEL:
+            self.stopBattle()
+
 
 config = Config()
 repair = Repair()
-
-
-@inject.hook(PlayerAvatar, '_PlayerAvatar__startGUI')
-@inject.log
-def hookStartGUI(func, *args):
-    func(*args)
-    repair.startBattle()
-
-
-@inject.hook(PlayerAvatar, '_PlayerAvatar__destroyGUI')
-@inject.log
-def hookDestroyGUI(func, *args):
-    func(*args)
-    repair.stopBattle()
-
-
-@inject.hook(ConsumablesPanel, '_ConsumablesPanel__onEquipmentAdded')
-@inject.log
-def onEquipmentAdded(func, *args):
-    func(*args)
-    repair.consumablesPanel = args[0]
